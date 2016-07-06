@@ -13,12 +13,6 @@ import (
 	"github.com/drone/drone-plugin-go/plugin"
 )
 
-var netrcFile = `
-machine %s
-login %s
-password %s
-`
-
 // Params stores the git clone parameters used to
 // configure and customzie the git clone behavior.
 type Params struct {
@@ -62,12 +56,6 @@ func clone(r *plugin.Repo, b *plugin.Build, w *plugin.Workspace, v *Params) erro
 		return err
 	}
 
-	// generate the .netrc file
-	if err := writeNetrc(w); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return err
-	}
-
 	// write the rsa private key if provided
 	if err := writeKey(w); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -76,14 +64,15 @@ func clone(r *plugin.Repo, b *plugin.Build, w *plugin.Workspace, v *Params) erro
 
 	var cmds []*exec.Cmd
 
-	// check for a .git directory and whether it's empty
-	//	if isDirEmpty(filepath.Join(w.Path, ".svn")) {
+	// check for a .svn directory and whether it's empty
+	if isDirEmpty(filepath.Join(w.Path, ".svn")) {
 
-	//	} else {
+		cmds = append(cmds, checkoutVersion(b, r.Clone))
+	} else {
 
-	//	}
+		cmds = append(cmds, updateVersion(b))
+	}
 
-	cmds = append(cmds, checkoutVersion(b, r.Clone))
 	for _, cmd := range cmds {
 		cmd.Dir = w.Path
 		cmd.Stdout = os.Stdout
@@ -96,6 +85,16 @@ func clone(r *plugin.Repo, b *plugin.Build, w *plugin.Workspace, v *Params) erro
 	}
 
 	return nil
+}
+
+// Checkout executes a svn checkout command.
+func updateVersion(b *plugin.Build) *exec.Cmd {
+	return exec.Command(
+		"svn",
+		"update",
+		"--revision",
+		b.Commit,
+	)
 }
 
 // Checkout executes a svn checkout command.
@@ -114,26 +113,6 @@ func checkoutVersion(b *plugin.Build, svnUrl string) *exec.Cmd {
 // is executed. Used for debugging your build.
 func trace(cmd *exec.Cmd) {
 	fmt.Println("$", strings.Join(cmd.Args, " "))
-}
-
-// Writes the netrc file.
-func writeNetrc(in *plugin.Workspace) error {
-	if in.Netrc == nil || len(in.Netrc.Machine) == 0 {
-		return nil
-	}
-	out := fmt.Sprintf(
-		netrcFile,
-		in.Netrc.Machine,
-		in.Netrc.Login,
-		in.Netrc.Password,
-	)
-	home := "/root"
-	u, err := user.Current()
-	if err == nil {
-		home = u.HomeDir
-	}
-	path := filepath.Join(home, ".netrc")
-	return ioutil.WriteFile(path, []byte(out), 0600)
 }
 
 // Writes the RSA private key
